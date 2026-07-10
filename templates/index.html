@@ -139,20 +139,12 @@ details div{padding:14px 15px 16px}details ul{margin:0;padding-left:20px}details
     <section class="panel chat">
       <div class="ph">
         <div><h2>AI 취업 상담</h2><p>thread_id 기준으로 대화 맥락과 사용자 프로필을 유지합니다.</p></div>
-        <div class="chathead">
+        <div class="chathead" style="display: none;">
           <div class="thread"><label>THREAD</label><input id="threadId" value="default" maxlength="100"></div>
           <button class="btn" onclick="newSession()">새 세션</button>
         </div>
       </div>
       <div id="chatMessages" class="messages">
-        <div class="welcome"><strong>맞춤형 취업 전략을 함께 설계해보세요.</strong>
-          <p>자격증, 기술, 프로젝트 경험, 목표 기관·직무를 알려주면 Agent가 문서 RAG와 최신 웹 검색을 필요에 따라 선택합니다.</p>
-          <div class="chips">
-            <button class="chip" onclick="suggest(this)">나는 정보처리기사가 있고 토익을 준비 중이야.</button>
-            <button class="chip" onclick="suggest(this)">충북대 전산실 직무를 목표로 하고 있어.</button>
-            <button class="chip" onclick="suggest(this)">내 현재 역량에서 부족한 점을 분석해줘.</button>
-          </div>
-        </div>
         <div class="row agent"><div class="bubble">안녕하세요. 현재 준비 상황과 목표 직무를 알려주시면 맞춤형 전략을 만들어드릴게요.<div class="meta">Employment Strategy Agent</div></div></div>
       </div>
       <div class="composer">
