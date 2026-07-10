@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Employment Strategy Agent</title>
+<style>
+:root{
+  --bg:#f6f7fb;--panel:#fff;--soft:#f8fafc;--text:#172033;--muted:#6b7280;
+  --line:#e5e7eb;--primary:#4f46e5;--primary2:#7c3aed;--shadow:0 18px 44px rgba(31,41,55,.08)
+}
+*{box-sizing:border-box} body{margin:0;background:linear-gradient(135deg,#f8fafc,#f5f3ff);color:var(--text);
+font-family:Inter,Pretendard,"Noto Sans KR",system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input,textarea{font:inherit}.app{width:min(1380px,calc(100% - 32px));margin:auto;padding:24px 0 40px}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 20px;background:rgba(255,255,255,.92);
+border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:13px}.logo{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;
+background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-weight:900}
+.brand h1{font-size:1.08rem;margin:0}.brand p{font-size:.82rem;color:var(--muted);margin:4px 0 0}
+.status{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:999px;
+background:var(--soft);font-size:.82rem;font-weight:800;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:#9ca3af}.status.ok .dot{background:#10b981}.status.fail .dot{background:#ef4444}
+.btn{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:12px;min-height:40px;padding:0 14px;font-weight:800;cursor:pointer}
+.btn.primary{border:0;color:white;background:linear-gradient(135deg,var(--primary),var(--primary2))}
+.tabs{display:flex;gap:8px;width:max-content;max-width:100%;padding:6px;border:1px solid var(--line);border-radius:16px;background:#fff;
+box-shadow:0 10px 28px rgba(31,41,55,.06);margin-bottom:18px}
+.tabbtn{border:0;background:transparent;color:var(--muted);padding:11px 16px;border-radius:12px;font-weight:900;cursor:pointer}
+.tabbtn.active{color:#fff;background:linear-gradient(135deg,var(--primary),var(--primary2))}
+.tab{display:none}.tab.active{display:block}
+.grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(340px,.8fr);gap:22px;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);overflow:hidden}
+.ph{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);background:#fafafa}
+.ph h2{font-size:1rem;margin:0}.ph p{margin:5px 0 0;color:var(--muted);font-size:.81rem}.body{padding:18px 20px 20px}
+.chat{min-height:760px;display:flex;flex-direction:column}.chathead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.thread{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--line);border-radius:12px;background:white}
+.thread label{font-size:.75rem;color:var(--muted);font-weight:900}.thread input{border:0;outline:0;width:145px;font-weight:800}
+.messages{flex:1;min-height:500px;max-height:620px;overflow-y:auto;padding:22px;background:linear-gradient(135deg,#fbfdff,#faf8ff)}
+.row{display:flex;margin-bottom:16px}.row.user{justify-content:flex-end}.bubble{max-width:80%;padding:13px 15px;border-radius:18px;line-height:1.65;
+font-size:.93rem;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere}
+.row.agent .bubble{background:#fff;border:1px solid var(--line);border-top-left-radius:6px;box-shadow:0 8px 18px rgba(31,41,55,.06)}
+.row.user .bubble{background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;border-top-right-radius:6px}
+.meta{margin-top:7px;font-size:.73rem;color:var(--muted);font-weight:800}.row.user .meta{color:rgba(255,255,255,.75)}
+.welcome{padding:18px;border:1px dashed #c7d2fe;border-radius:18px;background:#f5f3ff;color:#4338ca;margin-bottom:18px}
+.welcome p{margin:7px 0 0;color:#5b5fc7;font-size:.87rem;line-height:1.6}.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{border:1px solid #c7d2fe;border-radius:999px;padding:8px 11px;background:#fff;color:#4338ca;font-size:.77rem;font-weight:800;cursor:pointer}
+.composer{padding:16px;border-top:1px solid var(--line)}.composebox{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;padding:10px;
+background:var(--soft);border:1px solid var(--line);border-radius:18px}.composebox textarea{border:0;outline:0;resize:vertical;background:transparent;min-height:56px;max-height:180px;padding:6px 8px}
+.send{width:46px;height:46px;border:0;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--primary2));color:#fff;font-weight:900;cursor:pointer}
+.send:disabled{opacity:.55;cursor:not-allowed}.foot{display:flex;justify-content:space-between;margin-top:9px;color:var(--muted);font-size:.74rem}
+.side{display:grid;gap:22px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.metric{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}
+.metric small{display:block;color:var(--muted);font-weight:900}.metric strong{display:block;margin-top:6px;overflow-wrap:anywhere}
+.empty{color:var(--muted);font-size:.83rem;line-height:1.6}.sections{display:grid;gap:12px;margin-top:16px}
+details{border:1px solid var(--line);border-radius:16px;overflow:hidden}summary{cursor:pointer;padding:13px 15px;background:var(--soft);font-weight:900;font-size:.87rem}
+details div{padding:14px 15px 16px}details ul{margin:0;padding-left:20px}details li{margin:7px 0;line-height:1.5;font-size:.85rem;color:#374151}
+.uploadgrid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);gap:22px;align-items:start}
+.drop{min-height:180px;display:grid;place-items:center;padding:28px;border:2px dashed #c7d2fe;border-radius:22px;background:linear-gradient(135deg,#fafaff,#f5f7ff);text-align:center}
+.drop.drag{border-color:var(--primary);background:#eef2ff}.pdficon{width:72px;height:72px;display:grid;place-items:center;margin:0 auto 16px;border-radius:22px;background:#fff;border:1px solid #c7d2fe;color:var(--primary);font-weight:900}
+.drop h3{margin:0}.drop p{max-width:520px;margin:9px auto 0;color:var(--muted);font-size:.84rem;line-height:1.6}.uactions{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:18px}
+#pdfInput{display:none}.files{display:grid;gap:10px;margin-top:16px}.file{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:12px 13px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+.badge{width:36px;height:36px;display:grid;place-items:center;border-radius:11px;color:#b91c1c;background:#fef2f2;font-size:.72rem;font-weight:900}
+.fname{font-size:.84rem;font-weight:900;overflow-wrap:anywhere}.fsize{margin-top:3px;color:var(--muted);font-size:.73rem}.remove{width:32px;height:32px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#b91c1c;font-weight:900;cursor:pointer}
+.notice{padding:14px 15px;border-radius:15px;font-size:.82rem;line-height:1.6;margin-top:14px}.info{color:#3730a3;background:#eef2ff;border:1px solid #c7d2fe}
+.success{color:#0f766e;background:#ecfdf5;border:1px solid #a7f3d0}.danger{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);padding:13px 16px;border-radius:14px;background:#111827;color:#fff;font-size:.83rem;font-weight:800;opacity:0;pointer-events:none;transition:.2s}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+.exec-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:14px 16px;border:0;background:#fff;color:var(--text);font-weight:900;cursor:pointer}
+.exec-toggle-left{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.exec-toggle-left small{color:var(--muted);font-size:.76rem;font-weight:700}
+.exec-toggle-icon{width:28px;height:28px;display:grid;place-items:center;border-radius:9px;background:var(--soft);color:var(--primary);transition:transform .18s ease}
+.exec-toggle[aria-expanded="true"] .exec-toggle-icon{transform:rotate(180deg)}
+.exec-content{display:none;border-top:1px solid var(--line)}
+.exec-content.open{display:block}
+
+
+.registered-list{display:grid;gap:10px;margin-top:14px}
+.registered-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 13px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+.registered-meta{min-width:0}
+.registered-name{font-size:.84rem;font-weight:900;overflow-wrap:anywhere}
+.registered-size{margin-top:3px;color:var(--muted);font-size:.73rem}
+.delete-registered{min-height:34px;padding:0 10px;border:1px solid #fecaca;border-radius:10px;background:#fff;color:#b91c1c;font-weight:900;cursor:pointer}
+.delete-registered:hover{background:#fef2f2}
+.list-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.list-head h3{margin:0;font-size:.95rem}
+
+@media(max-width:1080px){.grid,.uploadgrid{grid-template-columns:1fr}}@media(max-width:720px){.app{width:calc(100% - 20px);padding-top:10px}.topbar,.ph{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:1fr}.tabs{width:100%}.tabbtn{flex:1}.bubble{max-width:92%}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="topbar">
+  <div class="brand"><div class="logo">ES</div><div><h1>Employment Strategy Agent</h1><p>RAG · Web Search · Memory 기반 맞춤형 취업 전략</p></div></div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div id="serverStatus" class="status"><span class="dot"></span><span id="serverStatusText">서버 확인 중</span></div>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tabbtn active" data-tab="conversation">대화 · 분석 결과</button>
+  <button class="tabbtn" data-tab="documents">채용 관련 PDF 관리</button>
+</nav>
+
+<section id="conversation" class="tab active">
+  <div class="grid">
+    <section class="panel chat">
+      <div class="ph">
+        <div><h2>AI 취업 상담</h2><p>thread_id 기준으로 대화 맥락과 사용자 프로필을 유지합니다.</p></div>
+        <div class="chathead">
+          <div class="thread"><label>THREAD</label><input id="threadId" value="default" maxlength="100"></div>
+          <button class="btn" onclick="newSession()">새 세션</button>
+        </div>
+      </div>
+      <div id="chatMessages" class="messages">
+        <div class="welcome"><strong>맞춤형 취업 전략을 함께 설계해보세요.</strong>
+          <p>자격증, 기술, 프로젝트 경험, 목표 기관·직무를 알려주면 Agent가 문서 RAG와 최신 웹 검색을 필요에 따라 선택합니다.</p>
+          <div class="chips">
+            <button class="chip" onclick="suggest(this)">나는 정보처리기사가 있고 토익을 준비 중이야.</button>
+            <button class="chip" onclick="suggest(this)">충북대 전산실 직무를 목표로 하고 있어.</button>
+            <button class="chip" onclick="suggest(this)">내 현재 역량에서 부족한 점을 분석해줘.</button>
+          </div>
+        </div>
+        <div class="row agent"><div class="bubble">안녕하세요. 현재 준비 상황과 목표 직무를 알려주시면 맞춤형 전략을 만들어드릴게요.<div class="meta">Employment Strategy Agent</div></div></div>
+      </div>
+      <div class="composer">
+        <div class="composebox"><textarea id="messageInput" maxlength="4000" placeholder="예: 충북대 전산실 직무 기준으로 내가 더 준비해야 할 역량을 분석해줘."></textarea><button id="sendButton" class="send" onclick="sendMessage()">↑</button></div>
+        <div class="foot"><span>Enter 전송 · Shift+Enter 줄바꿈</span><span id="charCount">0 / 4000</span></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <div class="ph"><div><h2>분석 결과</h2><p>강점, 부족 역량, 우선순위와 실행 계획</p></div></div>
+        <div id="structuredResult" class="body"><div class="empty">아직 분석 결과가 없습니다. 상담을 시작하면 분석 결과가 여기에 표시됩니다.</div></div>
+      </section>
+
+      <section class="panel">
+        <button id="executionToggle" class="exec-toggle" type="button" aria-expanded="false" onclick="toggleExecutionStatus()">
+          <span class="exec-toggle-left">
+            <span>실행 상태</span>
+            <small>현재 응답의 라우팅 및 재시도 정보</small>
+          </span>
+          <span class="exec-toggle-icon">⌄</span>
+        </button>
+        <div id="executionContent" class="exec-content">
+          <div class="body"><div class="metrics">
+            <div class="metric"><small>Route</small><strong id="routeValue">-</strong></div>
+            <div class="metric"><small>Retry</small><strong id="retryValue">0</strong></div>
+            <div class="metric"><small>Thread</small><strong id="threadValue">default</strong></div>
+          </div></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</section>
+
+<section id="documents" class="tab">
+  <div class="uploadgrid">
+    <section class="panel">
+      <div class="ph"><div><h2>채용 관련 PDF 업로드</h2><p>채용공고, 직무기술서, 기관 인재상 등 RAG 검색 문서를 등록합니다.</p></div></div>
+      <div class="body">
+        <div id="dropZone" class="drop">
+          <div>
+            <div class="pdficon">PDF</div>
+            <h3>PDF 파일을 여기에 끌어다 놓으세요.</h3>
+            <p>여러 파일을 한 번에 선택할 수 있습니다. 등록된 문서는 취업 상담 시 RAG 검색 근거로 활용합니다.</p>
+            <div class="uactions">
+              <button class="btn" onclick="pdfInput.click()">PDF 선택</button>
+              <button id="uploadButton" class="btn primary" onclick="uploadPdfFiles()">선택 파일 업로드</button>
+            </div>
+            <input id="pdfInput" type="file" accept="application/pdf,.pdf" multiple>
+          </div>
+        </div>
+        <div id="selectedFileList" class="files"></div>
+        <div id="uploadStatus"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <div class="ph">
+          <div><h2>등록된 PDF</h2><p>현재 RAG 검색에 사용되는 문서 목록</p></div>
+          <button class="btn" type="button" onclick="loadRegisteredPdfs()">새로고침</button>
+        </div>
+        <div class="body">
+          <div id="registeredPdfList" class="registered-list">
+            <div class="empty">등록된 PDF 목록을 불러오는 중입니다.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="ph"><div><h2>등록 가이드</h2><p>RAG 품질을 높이기 위한 권장 문서</p></div></div>
+        <div class="body">
+          <div class="notice info" style="margin-top:0"><strong>권장 문서</strong><br>채용공고, 직무기술서, 우대사항, 자격요건, 기관 인재상, 부서 소개 자료</div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</section>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const chatMessages=$("chatMessages"), messageInput=$("messageInput"), sendButton=$("sendButton"),
+threadId=$("threadId"), charCount=$("charCount"), structured=$("structuredResult"), pdfInput=$("pdfInput"),
+dropZone=$("dropZone"), fileList=$("selectedFileList"), uploadStatus=$("uploadStatus"), uploadButton=$("uploadButton"), registeredPdfList=$("registeredPdfList");
+let sending=false, selectedPdfFiles=[];
+
+document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabbtn").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.id===b.dataset.tab))});
+const esc=s=>String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+function toggleExecutionStatus(){
+  const btn=document.getElementById("executionToggle");
+  const content=document.getElementById("executionContent");
+  const open=!content.classList.contains("open");
+  content.classList.toggle("open",open);
+  btn.setAttribute("aria-expanded",String(open));
+}
+function toastMsg(m){$("toast").textContent=m;$("toast").classList.add("show");clearTimeout(toastMsg.t);toastMsg.t=setTimeout(()=>$("toast").classList.remove("show"),2200)}
+function append(role,text,meta=""){const r=document.createElement("div");r.className="row "+role;const b=document.createElement("div");b.className="bubble";const c=document.createElement("div");c.textContent=text;b.appendChild(c);if(meta){const m=document.createElement("div");m.className="meta";m.textContent=meta;b.appendChild(m)}r.appendChild(b);chatMessages.appendChild(r);chatMessages.scrollTop=chatMessages.scrollHeight;return r}
+function loading(){const r=append("agent","분석 중...","RAG / Web Search / LangGraph 실행 가능");r.dataset.loading="1"} function stopLoading(){chatMessages.querySelector('[data-loading="1"]')?.remove()}
+function section(title,items,open=false){const d=document.createElement("details");d.open=open;const s=document.createElement("summary");s.textContent=title;const c=document.createElement("div");if(items?.length){const ul=document.createElement("ul");items.forEach(i=>{const li=document.createElement("li");li.textContent=i;ul.appendChild(li)});c.appendChild(ul)}else c.innerHTML='<span class="empty">해당 결과가 없습니다.</span>';d.append(s,c);return d}
+function renderStructured(data){structured.innerHTML="";if(!data){structured.innerHTML='<div class="empty">구조화된 결과가 없습니다.</div>';return}const top=document.createElement("div");top.className="metrics";top.innerHTML=`<div class="metric"><small>Target Company</small><strong>${esc(data.target_company||"-")}</strong></div><div class="metric"><small>Target Role</small><strong>${esc(data.target_role||"-")}</strong></div><div class="metric"><small>Evidence</small><strong>${data.evidence_summary?.length||0}</strong></div>`;structured.appendChild(top);const g=document.createElement("div");g.className="sections";g.append(section("현재 강점",data.strengths,true),section("부족 역량",data.missing_skills,true),section("우선 실행 항목",data.priority_actions,true),section("실행 계획",data.action_plan,true),section("근거 요약",data.evidence_summary));structured.appendChild(g)}
+async function sendMessage(){if(sending)return;const msg=messageInput.value.trim(),tid=threadId.value.trim()||"default";if(!msg){toastMsg("메시지를 입력해주세요.");return}append("user",msg,"thread_id: "+tid);messageInput.value="";updateCount();sending=true;sendButton.disabled=true;loading();try{const res=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,thread_id:tid})});const data=await res.json();if(!res.ok)throw new Error(data.detail||"요청 실패");stopLoading();append("agent",String(data.answer||"").replace(/^###\s*/gm,"").replace(/^\-\s+/gm,"• "),`route: ${data.route} · retry: ${data.retry_count}`);$("routeValue").textContent=data.route||"-";$("retryValue").textContent=data.retry_count??0;$("threadValue").textContent=data.thread_id||tid;renderStructured(data.structured_result)}catch(e){stopLoading();append("agent","오류가 발생했습니다.\n"+e.message,"FastAPI / Agent Error")}finally{sending=false;sendButton.disabled=false;messageInput.focus()}}
+function suggest(b){messageInput.value=b.textContent.trim();updateCount();messageInput.focus()} function updateCount(){charCount.textContent=messageInput.value.length+" / 4000"}
+function newSession(){const id="session-"+Date.now().toString(36);threadId.value=id;$("threadValue").textContent=id;$("routeValue").textContent="-";$("retryValue").textContent="0";renderStructured(null);chatMessages.innerHTML="";append("agent","새 세션을 시작했습니다. 현재 준비 상황과 목표 직무를 알려주세요.","thread_id: "+id)}
+async function health(){try{const r=await fetch("/health",{cache:"no-store"});const d=await r.json();if(!r.ok)throw 0;$("serverStatus").classList.add("ok");$("serverStatusText").textContent="정상 · "+(d.model||"model")}catch{$("serverStatus").classList.add("fail");$("serverStatusText").textContent="서버 연결 실패"}}
+function mergeFiles(files){const map=new Map(selectedPdfFiles.map(f=>[f.name+"-"+f.size+"-"+f.lastModified,f]));[...files].filter(f=>f.type==="application/pdf"||f.name.toLowerCase().endsWith(".pdf")).forEach(f=>map.set(f.name+"-"+f.size+"-"+f.lastModified,f));selectedPdfFiles=[...map.values()];renderFiles()}
+function renderFiles(){fileList.innerHTML="";if(!selectedPdfFiles.length){fileList.innerHTML='<div class="empty">선택된 PDF가 없습니다.</div>';return}selectedPdfFiles.forEach((f,i)=>{const e=document.createElement("div");e.className="file";e.innerHTML=`<div class="badge">PDF</div><div><div class="fname">${esc(f.name)}</div><div class="fsize">${(f.size/1024/1024).toFixed(2)} MB</div></div><button class="remove">×</button>`;e.querySelector("button").onclick=()=>{selectedPdfFiles.splice(i,1);renderFiles()};fileList.appendChild(e)})}
+
+async function loadRegisteredPdfs(){
+  registeredPdfList.innerHTML='<div class="empty">등록된 PDF 목록을 불러오는 중입니다.</div>';
+  try{
+    const r=await fetch("/rag/documents",{cache:"no-store"});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||"목록 조회 실패");
+
+    registeredPdfList.innerHTML="";
+    if(!d.documents?.length){
+      registeredPdfList.innerHTML='<div class="empty">아직 등록된 PDF가 없습니다.</div>';
+      return;
+    }
+
+    d.documents.forEach(doc=>{
+      const item=document.createElement("div");
+      item.className="registered-item";
+
+      const badge=document.createElement("div");
+      badge.className="badge";
+      badge.textContent="PDF";
+
+      const meta=document.createElement("div");
+      meta.className="registered-meta";
+      meta.innerHTML=`<div class="registered-name">${esc(doc.filename)}</div><div class="registered-size">${formatSize(doc.size_bytes)}</div>`;
+
+      const del=document.createElement("button");
+      del.className="delete-registered";
+      del.type="button";
+      del.textContent="삭제";
+      del.onclick=()=>deleteRegisteredPdf(doc.filename);
+
+      item.append(badge,meta,del);
+      registeredPdfList.appendChild(item);
+    });
+  }catch(e){
+    registeredPdfList.innerHTML=`<div class="notice danger">목록 조회 실패: ${esc(e.message)}</div>`;
+  }
+}
+
+function formatSize(bytes){
+  if(bytes<1024)return `${bytes} B`;
+  if(bytes<1024*1024)return `${(bytes/1024).toFixed(1)} KB`;
+  return `${(bytes/1024/1024).toFixed(2)} MB`;
+}
+
+async function deleteRegisteredPdf(filename){
+  if(!confirm(`"${filename}" 문서를 삭제할까요?`))return;
+
+  try{
+    const r=await fetch(`/rag/documents/${encodeURIComponent(filename)}`,{
+      method:"DELETE"
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.detail||"삭제 실패");
+
+    toastMsg(d.message||"PDF가 삭제되었습니다.");
+    await loadRegisteredPdfs();
+  }catch(e){
+    toastMsg("삭제 실패: "+e.message);
+  }
+}
+
+async function uploadPdfFiles(){if(!selectedPdfFiles.length){toastMsg("업로드할 PDF를 선택해주세요.");return}const fd=new FormData();selectedPdfFiles.forEach(f=>fd.append("files",f));uploadButton.disabled=true;uploadStatus.innerHTML='<div class="notice info">PDF 업로드 및 인덱싱을 요청하는 중입니다...</div>';try{const r=await fetch("/rag/upload",{method:"POST",body:fd});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||"PDF 업로드 실패");uploadStatus.innerHTML='<div class="notice success">'+esc(d.message||"PDF 업로드가 완료되었습니다.")+'</div>';selectedPdfFiles=[];renderFiles();await loadRegisteredPdfs()}catch(e){uploadStatus.innerHTML='<div class="notice danger">업로드 실패: '+esc(e.message)+'</div>'}finally{uploadButton.disabled=false}}
+pdfInput.onchange=e=>{mergeFiles(e.target.files);pdfInput.value=""};["dragenter","dragover"].forEach(n=>dropZone.addEventListener(n,e=>{e.preventDefault();dropZone.classList.add("drag")}));["dragleave","drop"].forEach(n=>dropZone.addEventListener(n,e=>{e.preventDefault();dropZone.classList.remove("drag")}));dropZone.addEventListener("drop",e=>mergeFiles(e.dataTransfer.files));
+messageInput.oninput=updateCount;messageInput.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}};threadId.oninput=()=>$("threadValue").textContent=threadId.value.trim()||"default";
+window.addEventListener("DOMContentLoaded",()=>{health();updateCount();renderFiles();loadRegisteredPdfs();messageInput.focus()});
+</script>
+</body>
+</html>
