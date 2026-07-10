@@ -24,6 +24,7 @@ import os
 import re
 from collections.abc import Callable
 from datetime import date
+from uuid import uuid4
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import unquote
@@ -107,6 +108,10 @@ class ChatResponse(BaseModel):
     plan: dict | None = None
     structured_result: dict | None = None
 
+    # 상담 후 생성되는 실행 관리 데이터
+    career_plan: dict | None = None
+    todo_items: list[dict] = Field(default_factory=list)
+
 
 class UserProfile(BaseModel):
     university: str | None = None
@@ -131,6 +136,42 @@ class ExecutionPlan(BaseModel):
     steps: list[str] = Field(default_factory=list)
     needs_research: bool = False
     research_focus: list[str] = Field(default_factory=list)
+
+    # 사용자가 상담 막바지의 제안을 수락하거나 직접 요청했을 때만 True
+    create_career_plan: bool = False
+    create_todo_list: bool = False
+
+
+class CareerPlanPhase(BaseModel):
+    period: str
+    title: str
+    tasks: list[str] = Field(default_factory=list)
+    recruitment_event: str | None = None
+    basis: str | None = None
+
+
+class CareerPlan(BaseModel):
+    target_company: str | None = None
+    target_role: str | None = None
+    schedule_basis: str
+    phases: list[CareerPlanPhase] = Field(default_factory=list)
+
+
+class TodoDraft(BaseModel):
+    title: str
+    category: str = "기타"
+    priority: Literal["high", "medium", "low"] = "medium"
+    due_date: str | None = None
+    reason: str | None = None
+
+
+class ExecutionAssetsDraft(BaseModel):
+    career_plan: CareerPlan | None = None
+    todo_items: list[TodoDraft] = Field(default_factory=list)
+
+
+class TodoUpdateRequest(BaseModel):
+    completed: bool
 
 
 class EvidenceEvaluation(BaseModel):
@@ -160,9 +201,16 @@ class AnalysisSummary(BaseModel):
 class CareerState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
 
+    # 현재 세션 식별자
+    thread_id: str
+
     # 장기 세션 상태
     user_profile: dict
     target_changed: bool
+
+    # 상담 후 실행 관리
+    career_plan: dict
+    todo_items: list[dict]
 
     # Planner
     route: str
@@ -189,6 +237,12 @@ class CareerState(TypedDict, total=False):
 # ============================================================
 
 _retriever = None
+
+# InMemorySaver와 동일하게 서버 프로세스가 살아 있는 동안 유지되는
+# 일정 계획 / 체크리스트 저장소.
+execution_store: dict[str, dict] = {}
+
+
 
 
 def get_vectorstore() -> Chroma:
@@ -459,6 +513,9 @@ research_agent = create_agent(
         "직무 요구역량, 채용절차를 조사하세요. "
         "관련 업로드 PDF가 있으면 RAG를 활용하세요. "
         "기업/기관의 사실은 공식 출처를 우선하세요. "
+        "최신 공식 공고에서 필요한 기준이 확인되지 않으면, "
+        "과거 공식 채용공고와 과거 공식 직무자료까지 추가 탐색할 수 있습니다. "
+        "과거 자료는 연도/채용차수를 표시하고 현재 기준과 구분하세요. "
         "일반 웹 검색은 부족한 정보를 보완하는 용도로 사용하세요. "
         "최종 사용자 답변을 쓰기보다, 다음 분석 Agent가 활용할 수 있도록 "
         "찾은 사실과 출처를 명확히 정리하세요. "
@@ -615,6 +672,10 @@ def update_context_node(state: CareerState) -> dict:
         "retry_query": "",
         "final_answer": "",
         "structured_result": {},
+
+        # 같은 thread에서는 기존 생성 결과를 유지
+        "career_plan": state.get("career_plan", {}),
+        "todo_items": state.get("todo_items", []),
     }
 
     # 목표가 바뀌면 이전 회사/직무의 조사 근거를 버린다.
@@ -625,6 +686,8 @@ def update_context_node(state: CareerState) -> dict:
                 "evidence": [],
                 "used_tools": [],
                 "evidence_sources": [],
+                "career_plan": {},
+                "todo_items": [],
             }
         )
 
@@ -640,6 +703,8 @@ def planner_node(state: CareerState) -> dict:
     conversation = _recent_conversation_text(state)
     profile = state.get("user_profile", {})
     has_previous_evidence = bool(state.get("evidence", []))
+    has_career_plan = bool(state.get("career_plan", {}))
+    has_todo_items = bool(state.get("todo_items", []))
 
     planner = model.with_structured_output(ExecutionPlan)
 
@@ -666,6 +731,12 @@ def planner_node(state: CareerState) -> dict:
         이전 조사 근거 보유 여부:
         {has_previous_evidence}
 
+        기존 채용 일정 계획 존재 여부:
+        {has_career_plan}
+
+        기존 해야 할 일 목록 존재 여부:
+        {has_todo_items}
+
         계획 지침:
         - 특정 회사/기관의 특정 직무에 취업하고 싶다는 요청이라면,
           현재 요청이 단순 잡담이 아닌 이상 최근 공식 채용공고를 확인하는 것을 우선 검토하세요.
@@ -681,6 +752,21 @@ def planner_node(state: CareerState) -> dict:
         - 사용자가 새 프로필 정보를 제공했고 이전 회사/직무 분석이 이어지는 상황이면,
           이전 근거를 활용해 수정 분석할 수 있으므로 매번 재검색할 필요는 없습니다.
         - 이전 조사 근거가 있어도 최신성 확인이 필요한 질문이면 다시 조사하세요.
+        - 최신 공식 채용공고에서 사용자가 비교하고 싶어 하는 핵심 항목
+          (예: 가산점 자격증 목록, 우대사항, 어학 기준, 전형 기준)이 확인되지 않으면,
+          과거 공식 채용공고나 과거 공식 직무자료를 추가로 확인하는 단계를 계획할 수 있습니다.
+        - 과거 자료는 현재 기준으로 단정하기 위한 것이 아니라
+          '과거에는 어떤 기준이 적용되었는지'를 보조적으로 설명하기 위한 근거입니다.
+        - 사용자가 직접 채용 일정 계획이나 할 일 체크리스트 생성을 요청했다면
+          create_career_plan / create_todo_list를 필요한 만큼 True로 설정하세요.
+        - 사용자가 "응", "좋아", "그래", "만들어줘"처럼 짧게 답한 경우에는
+          반드시 최근 대화를 확인하세요. 직전 Assistant가
+          "채용 일정에 맞춘 준비 계획과 해야 할 일 체크리스트를 만들어드릴까요?"라고
+          제안한 상황이라면 해당 수락으로 해석하여 두 값을 True로 설정할 수 있습니다.
+        - 단순한 긍정 표현을 무조건 계획 생성 요청으로 해석하지 마세요.
+        - 계획/체크리스트를 생성할 때 채용 일정의 최신 확인이 필요하고
+          기존 조사 근거가 부족하면 needs_research=True로 둘 수 있습니다.
+        - 이미 필요한 조사 근거가 충분하면 기존 근거를 재사용하세요.
         - steps에는 사람이 읽어도 이해되는 작업 순서를 작성하세요.
         - research_focus에는 Research Agent가 찾아야 할 구체적 정보만 작성하세요.
         """
@@ -755,6 +841,15 @@ def research_agent_node(state: CareerState) -> dict:
       지원자격, 우대사항, 가산점, 자격증/어학 기준,
       직무기술서/NCS, 요구역량, 채용절차.
     - 최근 공식 채용공고가 여러 개면 목표 직무와 가장 관련 있는 공고를 우선하세요.
+    - 최신 공식 공고에서 핵심 비교 항목이 확인되지 않으면 바로 포기하지 마세요.
+      필요한 경우 과거 공식 채용공고와 과거 공식 직무자료까지 추가 검색하세요.
+    - 특히 다음 항목이 최신 공고에서 빠져 있으면 과거 공식 자료 확인을 고려하세요:
+      가산점 대상 자격증, 우대 자격증, 어학 기준, 전형별 가점,
+      직무별 세부 요구조건, 채용절차.
+    - 과거 자료를 찾았으면 반드시 연도/채용차수/공고 시점을 함께 정리하세요.
+    - 과거 기준을 현재 기준으로 단정하지 마세요.
+      '과거 공식 공고에서는 확인됨 / 현재 적용 여부는 별도 확인 필요'로 구분하세요.
+    - 최신 자료와 과거 자료가 충돌하면 최신 공식 자료를 우선하세요.
     - 업로드 PDF가 관련되면 RAG를 사용하세요.
     - 공식 출처를 우선하세요.
     - 일반 웹 자료를 사용했다면 공식 근거와 구분하세요.
@@ -865,10 +960,16 @@ def evidence_evaluator_node(state: CareerState) -> dict:
         - 사용자의 보유 자격증·어학·전공·경험이
           어떤 공식 기준과 연결되는지 판단할 근거가 있는가?
         - 최신 사실 질문이면 최신 근거가 있는가?
+        - 최신 공식 자료에 핵심 항목이 없지만 과거 공식 공고에서
+          보조적으로 확인할 가치가 있는가?
+        - 예를 들어 가산점 자격증 목록, 우대 자격증, 어학 기준이
+          최신 공고에서 확인되지 않았다면 과거 공식 공고 탐색이 필요한지 판단한다.
         - 모든 세부정보를 완벽히 찾을 필요는 없지만,
           강점/부족점/우선순위에 대한 핵심 결론을 만들 수 있어야 한다.
         - 부족하면 missing_information에
           Research Agent가 추가로 찾아야 할 정보만 구체적으로 적는다.
+        - 과거 자료가 필요하면 '과거 공식 채용공고에서 ○○ 기준 확인'처럼
+          검색 목표를 구체적으로 작성한다.
         """
     )
 
@@ -943,6 +1044,8 @@ def final_analysis_node(state: CareerState) -> dict:
         "evidence_evaluation",
         {},
     )
+    existing_career_plan = state.get("career_plan", {})
+    existing_todo_items = state.get("todo_items", [])
 
     response = model.invoke(
         f"""
@@ -972,6 +1075,16 @@ def final_analysis_node(state: CareerState) -> dict:
         근거 평가:
         {json.dumps(evaluation, ensure_ascii=False)}
 
+        기존 채용 일정 계획:
+        {json.dumps(existing_career_plan, ensure_ascii=False)}
+
+        기존 해야 할 일 목록:
+        {json.dumps(existing_todo_items, ensure_ascii=False)}
+
+        이번 Planner의 계획 생성 요청:
+        create_career_plan={plan.create_career_plan}
+        create_todo_list={plan.create_todo_list}
+
         답변 원칙:
         - 현재 질문에 직접 답하세요.
         - 고정된 메뉴나 템플릿을 무조건 사용하지 마세요.
@@ -993,6 +1106,15 @@ def final_analysis_node(state: CareerState) -> dict:
         - 부족한 정보와 실제 부족 역량을 구분하세요.
         - 최근 공식 채용공고에서 확인된 우대사항/가산점/요구조건과
           사용자 프로필의 연결을 최우선으로 설명하세요.
+        - 최신 공고에서 확인되지 않았지만 과거 공식 채용공고에서 확인된 내용이 있으면,
+          답변에 보조 근거로 포함할 수 있습니다.
+        - 이 경우 반드시 다음을 구분하세요:
+          1) 현재 공식 공고에서 확인된 기준,
+          2) 과거 공식 공고에서 확인된 사례,
+          3) 현재 채용에 동일 적용되는지는 미확인인지 여부.
+        - 과거 사례에는 가능하면 연도/채용차수/공고 시점을 함께 적으세요.
+        - 과거 기준을 현재 기준처럼 단정하지 마세요.
+        - 최신 자료와 과거 자료가 충돌하면 최신 공식 자료를 우선하세요.
         - 공고에 없는 자격증이나 역량을
           단순히 '하면 좋다'는 이유로 추천하지 마세요.
         - 공식 근거가 부족한 부분은 그 한계만 솔직히 밝히되,
@@ -1000,12 +1122,159 @@ def final_analysis_node(state: CareerState) -> dict:
         - 가산점/우대 여부는 확인된 근거가 있을 때만 단정하세요.
         - 출처가 있으면 답변에서 자연스럽게 밝혀 주세요.
         - 사용자가 묻지 않은 내용을 과도하게 늘리지 마세요.
+        - 충분한 취업 상담이 진행되어 목표 기업/직무, 현재 강점·부족점,
+          준비 우선순위가 어느 정도 정리되었고 아직 일정 계획과 체크리스트가 없다면,
+          답변 마지막에 자연스럽게
+          "이 분석을 바탕으로 채용 일정에 맞춘 준비 계획과 해야 할 일 체크리스트를 만들어드릴까요?"
+          라고 한 번 제안할 수 있습니다.
+        - 이미 일정 계획과 체크리스트가 존재하면 같은 제안을 반복하지 마세요.
+        - 이번 Planner에서 create_career_plan 또는 create_todo_list가 True라면
+          지금은 생성 단계로 이어질 것이므로 다시 생성 여부를 묻지 마세요.
         """
     )
 
     return {
         "final_answer": str(response.content),
     }
+
+
+def execution_asset_builder_node(state: CareerState) -> dict:
+    """
+    기존 상담 결과와 조사 근거를 바탕으로
+    채용 일정 계획과 해야 할 일 체크리스트를 구조화해 생성한다.
+    """
+    profile = state.get("user_profile", {})
+    plan = ExecutionPlan.model_validate(
+        state.get("plan", {}),
+    )
+    conversation = _recent_conversation_text(state)
+    research_result = state.get("research_result", "")
+    evidence = state.get("evidence", [])
+    final_answer = state.get("final_answer", "")
+    existing_career_plan = state.get("career_plan", {})
+    existing_todo_items = state.get("todo_items", [])
+
+    builder = model.with_structured_output(
+        ExecutionAssetsDraft
+    )
+
+    draft = builder.invoke(
+        f"""
+        당신은 취업 실행계획 설계자입니다.
+
+        사용자 프로필:
+        {json.dumps(profile, ensure_ascii=False)}
+
+        최근 대화:
+        {conversation}
+
+        Planner 목표:
+        {plan.goal}
+
+        조사 요약:
+        {research_result}
+
+        Tool 근거:
+        {json.dumps(evidence, ensure_ascii=False)}
+
+        직전 상담 답변:
+        {final_answer}
+
+        기존 채용 일정 계획:
+        {json.dumps(existing_career_plan, ensure_ascii=False)}
+
+        기존 해야 할 일:
+        {json.dumps(existing_todo_items, ensure_ascii=False)}
+
+        생성 요청:
+        - 채용 일정 계획: {plan.create_career_plan}
+        - 해야 할 일 체크리스트: {plan.create_todo_list}
+
+        생성 규칙:
+        - 사용자의 목표 기업/직무와 현재 상태를 기준으로 작성하세요.
+        - 조사된 실제 채용 일정이 있으면 그 일정에 맞춰 역산하세요.
+        - 정확한 날짜가 확인되지 않으면 날짜를 만들지 말고
+          "공고 발표 후", "지원 마감 2주 전", "필기 4주 전" 같은 상대 기간을 사용하세요.
+        - 사용자가 이미 보유한 자격증을 다시 취득 과제로 넣지 마세요.
+        - 실제 부족점과 준비 우선순위를 중심으로 작성하세요.
+        - 과거 채용 일정만 확인된 경우 현재 일정처럼 단정하지 말고 basis에 명시하세요.
+        - career_plan은 create_career_plan=True일 때 의미 있게 작성하세요.
+        - todo_items는 create_todo_list=True일 때 의미 있게 작성하세요.
+        - Todo는 실행 가능한 한 문장으로 쓰고, 우선순위와 기한을 가능한 범위에서 설정하세요.
+        - 새로운 사실을 임의로 만들지 마세요.
+        """
+    )
+
+    career_plan = state.get("career_plan", {})
+    if plan.create_career_plan and draft.career_plan is not None:
+        career_plan = draft.career_plan.model_dump()
+
+    todo_items = list(state.get("todo_items", []))
+    if plan.create_todo_list:
+        # 같은 제목의 기존 항목이 있으면 완료 상태를 유지한다.
+        existing_by_title = {
+            str(item.get("title", "")).strip().lower(): item
+            for item in todo_items
+            if item.get("title")
+        }
+
+        new_items = []
+        for item in draft.todo_items:
+            key = item.title.strip().lower()
+            old = existing_by_title.get(key, {})
+
+            new_items.append(
+                {
+                    "id": old.get("id") or uuid4().hex,
+                    "title": item.title,
+                    "category": item.category,
+                    "priority": item.priority,
+                    "due_date": item.due_date,
+                    "reason": item.reason,
+                    "completed": bool(old.get("completed", False)),
+                }
+            )
+
+        todo_items = new_items
+
+    generated_parts = []
+    if plan.create_career_plan:
+        generated_parts.append("채용 일정 계획")
+    if plan.create_todo_list:
+        generated_parts.append("해야 할 일 체크리스트")
+
+    answer = state.get("final_answer", "").rstrip()
+    if generated_parts:
+        answer += (
+            "\n\n"
+            + " · ".join(generated_parts)
+            + "를 생성해 전용 탭에 반영했습니다."
+        )
+
+    return {
+        "career_plan": career_plan,
+        "todo_items": todo_items,
+        "final_answer": answer,
+    }
+
+
+def route_after_final_analysis(
+    state: CareerState,
+) -> Literal[
+    "execution_asset_builder",
+    "structured_summary",
+]:
+    plan = ExecutionPlan.model_validate(
+        state.get("plan", {}),
+    )
+
+    if (
+        plan.create_career_plan
+        or plan.create_todo_list
+    ):
+        return "execution_asset_builder"
+
+    return "structured_summary"
 
 
 def structured_summary_node(state: CareerState) -> dict:
@@ -1098,6 +1367,10 @@ workflow.add_node(
     final_analysis_node,
 )
 workflow.add_node(
+    "execution_asset_builder",
+    execution_asset_builder_node,
+)
+workflow.add_node(
     "structured_summary",
     structured_summary_node,
 )
@@ -1138,8 +1411,17 @@ workflow.add_conditional_edges(
     },
 )
 
-workflow.add_edge(
+workflow.add_conditional_edges(
     "final_analysis",
+    route_after_final_analysis,
+    {
+        "execution_asset_builder": "execution_asset_builder",
+        "structured_summary": "structured_summary",
+    },
+)
+
+workflow.add_edge(
+    "execution_asset_builder",
     "structured_summary",
 )
 workflow.add_edge(
@@ -1169,7 +1451,7 @@ career_graph = workflow.compile(
 
 app = FastAPI(
     title="Employment Strategy Agent",
-    version="2.0.0",
+    version="2.1.0",
 )
 
 
@@ -1422,6 +1704,54 @@ async def upload_rag_documents(
     }
 
 
+@app.get("/career/plan")
+def get_career_plan(thread_id: str = "default") -> dict:
+    data = execution_store.get(thread_id, {})
+    return {
+        "thread_id": thread_id,
+        "career_plan": data.get("career_plan"),
+    }
+
+
+@app.get("/career/todos")
+def get_todo_items(thread_id: str = "default") -> dict:
+    data = execution_store.get(thread_id, {})
+    return {
+        "thread_id": thread_id,
+        "todo_items": data.get("todo_items", []),
+    }
+
+
+@app.patch("/career/todos/{todo_id}")
+def update_todo_item(
+    todo_id: str,
+    request: TodoUpdateRequest,
+    thread_id: str = "default",
+) -> dict:
+    data = execution_store.setdefault(
+        thread_id,
+        {
+            "career_plan": None,
+            "todo_items": [],
+        },
+    )
+
+    items = data.setdefault("todo_items", [])
+
+    for item in items:
+        if item.get("id") == todo_id:
+            item["completed"] = request.completed
+            return {
+                "thread_id": thread_id,
+                "todo_item": item,
+            }
+
+    raise HTTPException(
+        status_code=404,
+        detail="해야 할 일 항목을 찾을 수 없습니다.",
+    )
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
     config = {
@@ -1431,13 +1761,27 @@ def chat(request: ChatRequest) -> ChatResponse:
     }
 
     try:
+        stored_assets = execution_store.get(
+            request.thread_id,
+            {},
+        )
+
         result = career_graph.invoke(
             {
+                "thread_id": request.thread_id,
                 "messages": [
                     HumanMessage(
                         content=request.message
                     )
                 ],
+                "career_plan": stored_assets.get(
+                    "career_plan",
+                    {},
+                ) or {},
+                "todo_items": stored_assets.get(
+                    "todo_items",
+                    [],
+                ),
             },
             config=config,
         )
@@ -1454,6 +1798,17 @@ def chat(request: ChatRequest) -> ChatResponse:
                 f"{exc}"
             ),
         ) from exc
+
+    execution_store[request.thread_id] = {
+        "career_plan": result.get(
+            "career_plan",
+            {},
+        ) or None,
+        "todo_items": result.get(
+            "todo_items",
+            [],
+        ),
+    }
 
     return ChatResponse(
         answer=result.get(
@@ -1481,18 +1836,15 @@ def chat(request: ChatRequest) -> ChatResponse:
         structured_result=result.get(
             "structured_result",
         ),
+        career_plan=result.get(
+            "career_plan",
+        ) or None,
+        todo_items=result.get(
+            "todo_items",
+            [],
+        ),
     )
 
-
-@app.get("/workflow/mermaid")
-def workflow_mermaid() -> dict:
-    return {
-        "mermaid": (
-            career_graph
-            .get_graph()
-            .draw_mermaid()
-        ),
-    }
 
 
 if __name__ == "__main__":

@@ -83,7 +83,39 @@ details div{padding:14px 15px 16px}details ul{margin:0;padding-left:20px}details
 .list-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
 .list-head h3{margin:0;font-size:.95rem}
 
-@media(max-width:1080px){.grid,.uploadgrid{grid-template-columns:1fr}}@media(max-width:720px){.app{width:calc(100% - 20px);padding-top:10px}.topbar,.ph{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:1fr}.tabs{width:100%}.tabbtn{flex:1}.bubble{max-width:92%}}
+/* 채용 일정 계획 */
+.plan-wrap{display:grid;gap:16px}
+.plan-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.plan-card{padding:15px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}
+.plan-card small{display:block;color:var(--muted);font-weight:900;font-size:.74rem}
+.plan-card strong{display:block;margin-top:6px;overflow-wrap:anywhere}
+.timeline{position:relative;display:grid;gap:14px;margin-top:8px}
+.timeline:before{content:"";position:absolute;left:16px;top:8px;bottom:8px;width:2px;background:#ddd6fe}
+.phase{position:relative;padding:16px 16px 16px 48px;border:1px solid var(--line);border-radius:18px;background:#fff}
+.phase:before{content:"";position:absolute;left:10px;top:20px;width:14px;height:14px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--primary2));box-shadow:0 0 0 5px #ede9fe}
+.phase-period{color:var(--primary);font-size:.78rem;font-weight:900}
+.phase h3{margin:5px 0 9px;font-size:.96rem}
+.phase ul{margin:0;padding-left:19px}
+.phase li{margin:6px 0;line-height:1.5;font-size:.86rem}
+.phase-note{margin-top:10px;padding:9px 11px;border-radius:12px;background:var(--soft);color:var(--muted);font-size:.77rem;line-height:1.5}
+
+/* 해야 할 일 */
+.todo-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.todo-list{display:grid;gap:10px}
+.todo-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start;padding:14px 15px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.todo-item.done{opacity:.62;background:var(--soft)}
+.todo-item.done .todo-title{text-decoration:line-through}
+.todo-check{width:20px;height:20px;margin-top:2px;accent-color:var(--primary);cursor:pointer}
+.todo-title{font-weight:900;font-size:.89rem;line-height:1.45}
+.todo-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px;color:var(--muted);font-size:.74rem}
+.todo-reason{margin-top:7px;color:#4b5563;font-size:.78rem;line-height:1.5}
+.priority{display:inline-flex;align-items:center;justify-content:center;min-width:52px;padding:5px 8px;border-radius:999px;font-size:.7rem;font-weight:900}
+.priority.high{color:#b91c1c;background:#fef2f2}
+.priority.medium{color:#92400e;background:#fffbeb}
+.priority.low{color:#166534;background:#f0fdf4}
+
+.tabs{overflow-x:auto;scrollbar-width:thin}
+@media(max-width:1080px){.grid,.uploadgrid{grid-template-columns:1fr}.plan-summary,.todo-summary{grid-template-columns:1fr}}@media(max-width:720px){.app{width:calc(100% - 20px);padding-top:10px}.topbar,.ph{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:1fr}.tabs{width:100%}.tabbtn{flex:1}.bubble{max-width:92%}}
 </style>
 </head>
 <body>
@@ -97,6 +129,8 @@ details div{padding:14px 15px 16px}details ul{margin:0;padding-left:20px}details
 
 <nav class="tabs">
   <button class="tabbtn active" data-tab="conversation">대화 · 분석 결과</button>
+  <button class="tabbtn" data-tab="careerPlan">채용 일정 계획</button>
+  <button class="tabbtn" data-tab="todos">해야 할 일</button>
   <button class="tabbtn" data-tab="documents">채용 관련 PDF 관리</button>
 </nav>
 
@@ -153,6 +187,33 @@ details div{padding:14px 15px 16px}details ul{margin:0;padding-left:20px}details
   </div>
 </section>
 
+<section id="careerPlan" class="tab">
+  <section class="panel">
+    <div class="ph">
+      <div><h2>채용 일정 계획</h2><p>상담 결과와 확인된 채용 일정을 바탕으로 준비 순서를 정리합니다.</p></div>
+      <button class="btn" type="button" onclick="loadCareerPlan()">새로고침</button>
+    </div>
+    <div id="careerPlanContent" class="body">
+      <div class="empty">아직 생성된 채용 일정 계획이 없습니다. 상담 막바지에 Agent의 제안을 수락하거나 직접 계획 생성을 요청해보세요.</div>
+    </div>
+  </section>
+</section>
+
+<section id="todos" class="tab">
+  <section class="panel">
+    <div class="ph">
+      <div><h2>해야 할 일</h2><p>상담 결과에서 생성된 실행 과제를 체크하며 관리합니다.</p></div>
+      <button class="btn" type="button" onclick="loadTodos()">새로고침</button>
+    </div>
+    <div class="body">
+      <div id="todoSummary" class="todo-summary"></div>
+      <div id="todoList" class="todo-list">
+        <div class="empty">아직 생성된 해야 할 일 목록이 없습니다.</div>
+      </div>
+    </div>
+  </section>
+</section>
+
 <section id="documents" class="tab">
   <div class="uploadgrid">
     <section class="panel">
@@ -204,10 +265,11 @@ details div{padding:14px 15px 16px}details ul{margin:0;padding-left:20px}details
 const $=id=>document.getElementById(id);
 const chatMessages=$("chatMessages"), messageInput=$("messageInput"), sendButton=$("sendButton"),
 threadId=$("threadId"), charCount=$("charCount"), structured=$("structuredResult"), pdfInput=$("pdfInput"),
-dropZone=$("dropZone"), fileList=$("selectedFileList"), uploadStatus=$("uploadStatus"), uploadButton=$("uploadButton"), registeredPdfList=$("registeredPdfList");
+dropZone=$("dropZone"), fileList=$("selectedFileList"), uploadStatus=$("uploadStatus"), uploadButton=$("uploadButton"), registeredPdfList=$("registeredPdfList"),
+careerPlanContent=$("careerPlanContent"), todoSummary=$("todoSummary"), todoList=$("todoList");
 let sending=false, selectedPdfFiles=[];
 
-document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tabbtn").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.id===b.dataset.tab))});
+document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=async()=>{document.querySelectorAll(".tabbtn").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.id===b.dataset.tab));if(b.dataset.tab==="careerPlan")await loadCareerPlan();if(b.dataset.tab==="todos")await loadTodos()});
 const esc=s=>String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
 function toggleExecutionStatus(){
   const btn=document.getElementById("executionToggle");
@@ -221,9 +283,148 @@ function append(role,text,meta=""){const r=document.createElement("div");r.class
 function loading(){const r=append("agent","분석 중...","RAG / Web Search / LangGraph 실행 가능");r.dataset.loading="1"} function stopLoading(){chatMessages.querySelector('[data-loading="1"]')?.remove()}
 function section(title,items,open=false){const d=document.createElement("details");d.open=open;const s=document.createElement("summary");s.textContent=title;const c=document.createElement("div");if(items?.length){const ul=document.createElement("ul");items.forEach(i=>{const li=document.createElement("li");li.textContent=i;ul.appendChild(li)});c.appendChild(ul)}else c.innerHTML='<span class="empty">해당 결과가 없습니다.</span>';d.append(s,c);return d}
 function renderStructured(data){structured.innerHTML="";if(!data){structured.innerHTML='<div class="empty">구조화된 결과가 없습니다.</div>';return}const top=document.createElement("div");top.className="metrics";top.innerHTML=`<div class="metric"><small>Target Company</small><strong>${esc(data.target_company||"-")}</strong></div><div class="metric"><small>Target Role</small><strong>${esc(data.target_role||"-")}</strong></div><div class="metric"><small>Evidence</small><strong>${data.evidence_summary?.length||0}</strong></div>`;structured.appendChild(top);const g=document.createElement("div");g.className="sections";g.append(section("현재 강점",data.strengths,true),section("부족 역량",data.missing_skills,true),section("우선 실행 항목",data.priority_actions,true),section("실행 계획",data.action_plan,true),section("근거 요약",data.evidence_summary));structured.appendChild(g)}
-async function sendMessage(){if(sending)return;const msg=messageInput.value.trim(),tid=threadId.value.trim()||"default";if(!msg){toastMsg("메시지를 입력해주세요.");return}append("user",msg,"thread_id: "+tid);messageInput.value="";updateCount();sending=true;sendButton.disabled=true;loading();try{const res=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,thread_id:tid})});const data=await res.json();if(!res.ok)throw new Error(data.detail||"요청 실패");stopLoading();append("agent",String(data.answer||"").replace(/^###\s*/gm,"").replace(/^\-\s+/gm,"• "),`route: ${data.route} · retry: ${data.retry_count}`);$("routeValue").textContent=data.route||"-";$("retryValue").textContent=data.retry_count??0;$("threadValue").textContent=data.thread_id||tid;renderStructured(data.structured_result)}catch(e){stopLoading();append("agent","오류가 발생했습니다.\n"+e.message,"FastAPI / Agent Error")}finally{sending=false;sendButton.disabled=false;messageInput.focus()}}
+function priorityLabel(p){
+  return p==="high"?"높음":p==="low"?"낮음":"보통";
+}
+
+function renderCareerPlan(plan){
+  careerPlanContent.innerHTML="";
+
+  if(!plan || !plan.phases?.length){
+    careerPlanContent.innerHTML='<div class="empty">아직 생성된 채용 일정 계획이 없습니다. 상담 막바지에 Agent의 제안을 수락하거나 직접 계획 생성을 요청해보세요.</div>';
+    return;
+  }
+
+  const wrap=document.createElement("div");
+  wrap.className="plan-wrap";
+
+  const summary=document.createElement("div");
+  summary.className="plan-summary";
+  summary.innerHTML=`
+    <div class="plan-card"><small>Target Company</small><strong>${esc(plan.target_company||"-")}</strong></div>
+    <div class="plan-card"><small>Target Role</small><strong>${esc(plan.target_role||"-")}</strong></div>
+    <div class="plan-card"><small>Schedule Basis</small><strong>${esc(plan.schedule_basis||"-")}</strong></div>
+  `;
+  wrap.appendChild(summary);
+
+  const timeline=document.createElement("div");
+  timeline.className="timeline";
+
+  plan.phases.forEach(phase=>{
+    const item=document.createElement("article");
+    item.className="phase";
+
+    const tasks=(phase.tasks||[]).map(task=>`<li>${esc(task)}</li>`).join("");
+    const notes=[
+      phase.recruitment_event?`채용 이벤트: ${phase.recruitment_event}`:"",
+      phase.basis?`근거: ${phase.basis}`:""
+    ].filter(Boolean).join(" · ");
+
+    item.innerHTML=`
+      <div class="phase-period">${esc(phase.period||"기간 미정")}</div>
+      <h3>${esc(phase.title||"준비 단계")}</h3>
+      ${tasks?`<ul>${tasks}</ul>`:'<div class="empty">등록된 세부 과제가 없습니다.</div>'}
+      ${notes?`<div class="phase-note">${esc(notes)}</div>`:""}
+    `;
+    timeline.appendChild(item);
+  });
+
+  wrap.appendChild(timeline);
+  careerPlanContent.appendChild(wrap);
+}
+
+function renderTodos(items){
+  const todos=Array.isArray(items)?items:[];
+  todoList.innerHTML="";
+  todoSummary.innerHTML="";
+
+  const completed=todos.filter(x=>x.completed).length;
+  const high=todos.filter(x=>x.priority==="high"&&!x.completed).length;
+
+  todoSummary.innerHTML=`
+    <div class="metric"><small>전체</small><strong>${todos.length}</strong></div>
+    <div class="metric"><small>완료</small><strong>${completed}</strong></div>
+    <div class="metric"><small>남은 높은 우선순위</small><strong>${high}</strong></div>
+  `;
+
+  if(!todos.length){
+    todoList.innerHTML='<div class="empty">아직 생성된 해야 할 일 목록이 없습니다.</div>';
+    return;
+  }
+
+  todos.forEach(item=>{
+    const row=document.createElement("div");
+    row.className="todo-item"+(item.completed?" done":"");
+
+    const check=document.createElement("input");
+    check.type="checkbox";
+    check.className="todo-check";
+    check.checked=!!item.completed;
+    check.onchange=()=>updateTodo(item.id,check.checked);
+
+    const content=document.createElement("div");
+    content.innerHTML=`
+      <div class="todo-title">${esc(item.title||"할 일")}</div>
+      <div class="todo-meta">
+        <span>${esc(item.category||"기타")}</span>
+        ${item.due_date?`<span>기한: ${esc(item.due_date)}</span>`:""}
+      </div>
+      ${item.reason?`<div class="todo-reason">${esc(item.reason)}</div>`:""}
+    `;
+
+    const badge=document.createElement("span");
+    badge.className=`priority ${item.priority||"medium"}`;
+    badge.textContent=priorityLabel(item.priority);
+
+    row.append(check,content,badge);
+    todoList.appendChild(row);
+  });
+}
+
+async function loadCareerPlan(){
+  const tid=threadId.value.trim()||"default";
+  try{
+    const r=await fetch(`/career/plan?thread_id=${encodeURIComponent(tid)}`,{cache:"no-store"});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||"계획 조회 실패");
+    renderCareerPlan(d.career_plan);
+  }catch(e){
+    careerPlanContent.innerHTML=`<div class="notice danger">계획 조회 실패: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadTodos(){
+  const tid=threadId.value.trim()||"default";
+  try{
+    const r=await fetch(`/career/todos?thread_id=${encodeURIComponent(tid)}`,{cache:"no-store"});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||"할 일 조회 실패");
+    renderTodos(d.todo_items||[]);
+  }catch(e){
+    todoList.innerHTML=`<div class="notice danger">할 일 조회 실패: ${esc(e.message)}</div>`;
+  }
+}
+
+async function updateTodo(todoId,completed){
+  const tid=threadId.value.trim()||"default";
+  try{
+    const r=await fetch(`/career/todos/${encodeURIComponent(todoId)}?thread_id=${encodeURIComponent(tid)}`,{
+      method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({completed})
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||"할 일 수정 실패");
+    await loadTodos();
+  }catch(e){
+    toastMsg("체크 상태 저장 실패: "+e.message);
+    await loadTodos();
+  }
+}
+
+async function sendMessage(){if(sending)return;const msg=messageInput.value.trim(),tid=threadId.value.trim()||"default";if(!msg){toastMsg("메시지를 입력해주세요.");return}append("user",msg,"thread_id: "+tid);messageInput.value="";updateCount();sending=true;sendButton.disabled=true;loading();try{const res=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg,thread_id:tid})});const data=await res.json();if(!res.ok)throw new Error(data.detail||"요청 실패");stopLoading();append("agent",String(data.answer||"").replace(/^###\s*/gm,"").replace(/^\-\s+/gm,"• "),`route: ${data.route} · retry: ${data.retry_count}`);$("routeValue").textContent=data.route||"-";$("retryValue").textContent=data.retry_count??0;$("threadValue").textContent=data.thread_id||tid;renderStructured(data.structured_result);renderCareerPlan(data.career_plan);renderTodos(data.todo_items||[])}catch(e){stopLoading();append("agent","오류가 발생했습니다.\n"+e.message,"FastAPI / Agent Error")}finally{sending=false;sendButton.disabled=false;messageInput.focus()}}
 function suggest(b){messageInput.value=b.textContent.trim();updateCount();messageInput.focus()} function updateCount(){charCount.textContent=messageInput.value.length+" / 4000"}
-function newSession(){const id="session-"+Date.now().toString(36);threadId.value=id;$("threadValue").textContent=id;$("routeValue").textContent="-";$("retryValue").textContent="0";renderStructured(null);chatMessages.innerHTML="";append("agent","새 세션을 시작했습니다. 현재 준비 상황과 목표 직무를 알려주세요.","thread_id: "+id)}
+function newSession(){const id="session-"+Date.now().toString(36);threadId.value=id;$("threadValue").textContent=id;$("routeValue").textContent="-";$("retryValue").textContent="0";renderStructured(null);renderCareerPlan(null);renderTodos([]);chatMessages.innerHTML="";append("agent","새 세션을 시작했습니다. 현재 준비 상황과 목표 직무를 알려주세요.","thread_id: "+id)}
 async function health(){try{const r=await fetch("/health",{cache:"no-store"});const d=await r.json();if(!r.ok)throw 0;$("serverStatus").classList.add("ok");$("serverStatusText").textContent="정상 · "+(d.model||"model")}catch{$("serverStatus").classList.add("fail");$("serverStatusText").textContent="서버 연결 실패"}}
 function mergeFiles(files){const map=new Map(selectedPdfFiles.map(f=>[f.name+"-"+f.size+"-"+f.lastModified,f]));[...files].filter(f=>f.type==="application/pdf"||f.name.toLowerCase().endsWith(".pdf")).forEach(f=>map.set(f.name+"-"+f.size+"-"+f.lastModified,f));selectedPdfFiles=[...map.values()];renderFiles()}
 function renderFiles(){fileList.innerHTML="";if(!selectedPdfFiles.length){fileList.innerHTML='<div class="empty">선택된 PDF가 없습니다.</div>';return}selectedPdfFiles.forEach((f,i)=>{const e=document.createElement("div");e.className="file";e.innerHTML=`<div class="badge">PDF</div><div><div class="fname">${esc(f.name)}</div><div class="fsize">${(f.size/1024/1024).toFixed(2)} MB</div></div><button class="remove">×</button>`;e.querySelector("button").onclick=()=>{selectedPdfFiles.splice(i,1);renderFiles()};fileList.appendChild(e)})}
@@ -292,8 +493,8 @@ async function deleteRegisteredPdf(filename){
 
 async function uploadPdfFiles(){if(!selectedPdfFiles.length){toastMsg("업로드할 PDF를 선택해주세요.");return}const fd=new FormData();selectedPdfFiles.forEach(f=>fd.append("files",f));uploadButton.disabled=true;uploadStatus.innerHTML='<div class="notice info">PDF 업로드 및 인덱싱을 요청하는 중입니다...</div>';try{const r=await fetch("/rag/upload",{method:"POST",body:fd});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||"PDF 업로드 실패");uploadStatus.innerHTML='<div class="notice success">'+esc(d.message||"PDF 업로드가 완료되었습니다.")+'</div>';selectedPdfFiles=[];renderFiles();await loadRegisteredPdfs()}catch(e){uploadStatus.innerHTML='<div class="notice danger">업로드 실패: '+esc(e.message)+'</div>'}finally{uploadButton.disabled=false}}
 pdfInput.onchange=e=>{mergeFiles(e.target.files);pdfInput.value=""};["dragenter","dragover"].forEach(n=>dropZone.addEventListener(n,e=>{e.preventDefault();dropZone.classList.add("drag")}));["dragleave","drop"].forEach(n=>dropZone.addEventListener(n,e=>{e.preventDefault();dropZone.classList.remove("drag")}));dropZone.addEventListener("drop",e=>mergeFiles(e.dataTransfer.files));
-messageInput.oninput=updateCount;messageInput.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}};threadId.oninput=()=>$("threadValue").textContent=threadId.value.trim()||"default";
-window.addEventListener("DOMContentLoaded",()=>{health();updateCount();renderFiles();loadRegisteredPdfs();messageInput.focus()});
+messageInput.oninput=updateCount;messageInput.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}};threadId.oninput=()=>$("threadValue").textContent=threadId.value.trim()||"default";threadId.onchange=()=>{loadCareerPlan();loadTodos()};
+window.addEventListener("DOMContentLoaded",()=>{health();updateCount();renderFiles();loadRegisteredPdfs();loadCareerPlan();loadTodos();messageInput.focus()});
 </script>
 </body>
 </html>
