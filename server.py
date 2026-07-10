@@ -153,6 +153,18 @@ class CareerPlanPhase(BaseModel):
 class CareerPlan(BaseModel):
     target_company: str | None = None
     target_role: str | None = None
+
+    # 실제 실행 계획이 대상으로 하는 연도
+    plan_year: int | None = None
+
+    # 현재 공식 일정인지, 종료된 일정인지, 과거 일정 기반 예상인지 구분
+    schedule_status: Literal[
+        "current_official",
+        "current_recruitment_closed",
+        "historical_projection",
+        "unknown",
+    ] = "unknown"
+
     schedule_basis: str
     phases: list[CareerPlanPhase] = Field(default_factory=list)
 
@@ -211,6 +223,10 @@ class CareerState(TypedDict, total=False):
     # 상담 후 실행 관리
     career_plan: dict
     todo_items: list[dict]
+
+    # 계획/체크리스트 제안 상태
+    plan_offer_made: bool
+    plan_offer_pending: bool
 
     # Planner
     route: str
@@ -676,6 +692,16 @@ def update_context_node(state: CareerState) -> dict:
         # 같은 thread에서는 기존 생성 결과를 유지
         "career_plan": state.get("career_plan", {}),
         "todo_items": state.get("todo_items", []),
+
+        # 같은 thread에서 제안 여부도 유지
+        "plan_offer_made": state.get(
+            "plan_offer_made",
+            False,
+        ),
+        "plan_offer_pending": state.get(
+            "plan_offer_pending",
+            False,
+        ),
     }
 
     # 목표가 바뀌면 이전 회사/직무의 조사 근거를 버린다.
@@ -688,10 +714,99 @@ def update_context_node(state: CareerState) -> dict:
                 "evidence_sources": [],
                 "career_plan": {},
                 "todo_items": [],
+                "plan_offer_made": False,
+                "plan_offer_pending": False,
             }
         )
 
     return updates
+
+
+def _is_direct_asset_request(text: str) -> bool:
+    """
+    사용자가 실제로 일정 계획/체크리스트 생성을 요청했는지
+    최소한의 안전장치로 확인한다.
+    """
+    normalized = " ".join(
+        text.strip().lower().split()
+    )
+
+    keywords = [
+        "계획 만들어",
+        "계획 세워",
+        "준비 계획",
+        "취업 계획",
+        "채용 일정 계획",
+        "플랜 만들어",
+        "플랜 짜",
+        "체크리스트 만들어",
+        "체크 리스트 만들어",
+        "해야 할 일 만들어",
+        "할 일 만들어",
+        "todo 만들어",
+        "투두 만들어",
+        "일정에 맞춰 계획",
+        "일정에 맞춘 계획",
+    ]
+
+    return any(
+        keyword in normalized
+        for keyword in keywords
+    )
+
+
+def _is_offer_acceptance(text: str) -> bool:
+    """
+    직전 계획 생성 제안에 대한 짧은 수락 표현을 확인한다.
+    """
+    normalized = " ".join(
+        text.strip().lower().split()
+    )
+
+    accepted = {
+        "응",
+        "네",
+        "예",
+        "ㅇㅇ",
+        "좋아",
+        "그래",
+        "해줘",
+        "만들어줘",
+        "부탁해",
+        "응 해줘",
+        "응 만들어줘",
+        "좋아 해줘",
+        "좋아 만들어줘",
+        "그래 해줘",
+        "그래 만들어줘",
+        "네 만들어줘",
+        "예 만들어줘",
+    }
+
+    return normalized in accepted
+
+
+def _strip_plan_offer_text(answer: str) -> str:
+    """
+    LLM이 실수로 동일한 제안 문구를 생성해도
+    Python 상태 로직에서만 한 번 붙도록 제거한다.
+    """
+    offer_text = (
+        "이 분석을 바탕으로 채용 일정에 맞춘 준비 계획과 "
+        "해야 할 일 체크리스트를 만들어드릴까요?"
+    )
+
+    cleaned = answer.replace(offer_text, "").strip()
+
+    # 줄바꿈/공백 차이까지 한 번 더 정리
+    cleaned = re.sub(
+        r"\s*이 분석을 바탕으로\s*채용 일정에 맞춘 준비 계획과\s*"
+        r"해야 할 일 체크리스트를 만들어드릴까요\?\s*",
+        "",
+        cleaned,
+    ).strip()
+
+    return cleaned
 
 
 def planner_node(state: CareerState) -> dict:
@@ -772,9 +887,35 @@ def planner_node(state: CareerState) -> dict:
         """
     )
 
+    # 계획/체크리스트 생성은 실제 요청 또는 직전 제안 수락일 때만 허용한다.
+    direct_asset_request = _is_direct_asset_request(
+        current_text
+    )
+
+    accepted_offer = (
+        state.get(
+            "plan_offer_pending",
+            False,
+        )
+        and _is_offer_acceptance(
+            current_text
+        )
+    )
+
+    if accepted_offer:
+        plan.create_career_plan = True
+        plan.create_todo_list = True
+    elif not direct_asset_request:
+        # 첫 취업상담 요청을 LLM이 계획 생성 요청으로 오판하는 것을 방지
+        plan.create_career_plan = False
+        plan.create_todo_list = False
+
     return {
         "route": "planner",
         "plan": plan.model_dump(),
+
+        # pending은 "직전 제안의 바로 다음 사용자 턴"에서만 유효
+        "plan_offer_pending": False,
     }
 
 
@@ -856,6 +997,22 @@ def research_agent_node(state: CareerState) -> dict:
     - 근거 없는 내용을 만들지 마세요.
     - 다음 분석 Agent가 사용자의 현재 상태와 비교할 수 있도록,
       '무엇이 요구되는지/우대되는지/가산점인지'를 출처와 함께 명확히 정리하세요.
+
+    채용 일정 계획 관련 추가 원칙:
+    - create_career_plan={plan.create_career_plan}
+    - 채용 일정 계획 생성이 요청된 경우,
+      현재 날짜 기준으로 현재 연도 공식 채용공고 존재 여부를 확인하세요.
+    - 현재 연도 공식 공고가 있다면 가능한 범위에서
+      공고일, 지원 시작일, 지원 마감일, 필기 예정일,
+      면접 예정일, 최종 발표일을 확인하세요.
+    - 현재 날짜 기준으로 해당 채용이 진행 중인지 종료되었는지 구분하세요.
+    - 현재 연도 채용이 종료되었다면,
+      가장 최근 공식 일정 전체를 다음 연도 계획의 참고 패턴으로 정리하세요.
+    - 현재 연도 공식 공고가 없다면,
+      가장 최근 과거 공식 채용공고의 공고 시기, 지원기간,
+      필기 시점, 면접 시점을 확인하세요.
+    - 과거 실제 일정과 현재/미래 예상 일정을 명확히 구분하세요.
+    - 다음 연도 일정이 공식 발표되지 않았다면 확정 일정이라고 표현하지 마세요.
     """
 
     result = research_agent.invoke(
@@ -970,6 +1127,24 @@ def evidence_evaluator_node(state: CareerState) -> dict:
           Research Agent가 추가로 찾아야 할 정보만 구체적으로 적는다.
         - 과거 자료가 필요하면 '과거 공식 채용공고에서 ○○ 기준 확인'처럼
           검색 목표를 구체적으로 작성한다.
+
+        채용 일정 계획 추가 평가:
+        - create_career_plan={plan.create_career_plan}
+        - create_career_plan=True인 경우,
+          현재 날짜 기준으로 실행 계획을 세울 만큼 채용 일정 근거가 확보되었는가?
+        - 현재 연도 공식 채용공고 존재 여부가 확인되었는가?
+        - 현재 연도 채용이 진행 중인지 이미 종료되었는지 확인되었는가?
+        - 현재 연도 채용이 종료되었다면,
+          다음 연도 계획에 참고할 수 있는 가장 최근 공식 일정 패턴이 확보되었는가?
+        - 현재 연도 공고가 없다면,
+          가장 최근 공식 과거 채용공고의 공고 시기, 지원기간,
+          필기/면접 시점이 확보되었는가?
+        - 일정 근거가 부족하면 sufficient=False로 판단하고
+          missing_information에
+          '현재 연도 공식 채용 일정 및 종료 여부 확인'
+          또는
+          '가장 최근 공식 채용공고 일정 패턴 확인'
+          처럼 구체적으로 작성한다.
         """
     )
 
@@ -1027,6 +1202,7 @@ def final_analysis_node(state: CareerState) -> dict:
     """
     조사 + 사용자 상태 + 최근 대화를 한 번에 보고
     자연스럽게 최종 답변한다.
+    계획 생성 제안은 LLM이 아니라 Python 상태 로직에서 한 번만 관리한다.
     """
     current_text = _latest_user_text(state)
     conversation = _recent_conversation_text(state)
@@ -1044,8 +1220,22 @@ def final_analysis_node(state: CareerState) -> dict:
         "evidence_evaluation",
         {},
     )
-    existing_career_plan = state.get("career_plan", {})
-    existing_todo_items = state.get("todo_items", [])
+    existing_career_plan = state.get(
+        "career_plan",
+        {},
+    )
+    existing_todo_items = state.get(
+        "todo_items",
+        [],
+    )
+    plan_offer_made = state.get(
+        "plan_offer_made",
+        False,
+    )
+    plan_offer_pending = state.get(
+        "plan_offer_pending",
+        False,
+    )
 
     response = model.invoke(
         f"""
@@ -1122,37 +1312,92 @@ def final_analysis_node(state: CareerState) -> dict:
         - 가산점/우대 여부는 확인된 근거가 있을 때만 단정하세요.
         - 출처가 있으면 답변에서 자연스럽게 밝혀 주세요.
         - 사용자가 묻지 않은 내용을 과도하게 늘리지 마세요.
-        - 충분한 취업 상담이 진행되어 목표 기업/직무, 현재 강점·부족점,
-          준비 우선순위가 어느 정도 정리되었고 아직 일정 계획과 체크리스트가 없다면,
-          답변 마지막에 자연스럽게
-          "이 분석을 바탕으로 채용 일정에 맞춘 준비 계획과 해야 할 일 체크리스트를 만들어드릴까요?"
-          라고 한 번 제안할 수 있습니다.
-        - 이미 일정 계획과 체크리스트가 존재하면 같은 제안을 반복하지 마세요.
+        - 계획/체크리스트 생성 여부를 먼저 묻지 마세요.
+        - "만들어드릴까요?" 같은 제안 문구를 출력하지 마세요.
+          계획 생성 제안은 시스템의 별도 상태 로직에서 관리합니다.
         - 이번 Planner에서 create_career_plan 또는 create_todo_list가 True라면
-          지금은 생성 단계로 이어질 것이므로 다시 생성 여부를 묻지 마세요.
+          생성 단계로 이어지므로 다시 생성 여부를 묻지 마세요.
         """
     )
 
+    answer = _strip_plan_offer_text(
+        str(response.content).strip()
+    )
+
+    offer_text = (
+        "이 분석을 바탕으로 채용 일정에 맞춘 준비 계획과 "
+        "해야 할 일 체크리스트를 만들어드릴까요?"
+    )
+
+    should_offer = (
+        not plan_offer_made
+        and not plan_offer_pending
+        and not existing_career_plan
+        and not existing_todo_items
+        and not plan.create_career_plan
+        and not plan.create_todo_list
+        and bool(
+            profile.get("target_company")
+        )
+        and bool(
+            profile.get("target_role")
+        )
+        and bool(
+            research_result
+            or evidence
+        )
+    )
+
+    if should_offer:
+        answer = (
+            answer
+            + "\n\n"
+            + offer_text
+        )
+
     return {
-        "final_answer": str(response.content),
+        "final_answer": answer,
+        "plan_offer_made": (
+            plan_offer_made
+            or should_offer
+        ),
+        "plan_offer_pending": bool(
+            should_offer
+        ),
     }
 
 
 def execution_asset_builder_node(state: CareerState) -> dict:
     """
     기존 상담 결과와 조사 근거를 바탕으로
-    채용 일정 계획과 해야 할 일 체크리스트를 구조화해 생성한다.
+    현재 날짜 이후의 채용 일정 계획과 체크리스트를 생성한다.
     """
+    today = date.today()
+    current_year = today.year
+    next_year = current_year + 1
+
     profile = state.get("user_profile", {})
     plan = ExecutionPlan.model_validate(
         state.get("plan", {}),
     )
     conversation = _recent_conversation_text(state)
-    research_result = state.get("research_result", "")
+    research_result = state.get(
+        "research_result",
+        "",
+    )
     evidence = state.get("evidence", [])
-    final_answer = state.get("final_answer", "")
-    existing_career_plan = state.get("career_plan", {})
-    existing_todo_items = state.get("todo_items", [])
+    final_answer = state.get(
+        "final_answer",
+        "",
+    )
+    existing_career_plan = state.get(
+        "career_plan",
+        {},
+    )
+    existing_todo_items = state.get(
+        "todo_items",
+        [],
+    )
 
     builder = model.with_structured_output(
         ExecutionAssetsDraft
@@ -1161,6 +1406,15 @@ def execution_asset_builder_node(state: CareerState) -> dict:
     draft = builder.invoke(
         f"""
         당신은 취업 실행계획 설계자입니다.
+
+        현재 날짜:
+        {today.isoformat()}
+
+        현재 연도:
+        {current_year}
+
+        다음 연도:
+        {next_year}
 
         사용자 프로필:
         {json.dumps(profile, ensure_ascii=False)}
@@ -1191,63 +1445,205 @@ def execution_asset_builder_node(state: CareerState) -> dict:
         - 해야 할 일 체크리스트: {plan.create_todo_list}
 
         생성 규칙:
-        - 사용자의 목표 기업/직무와 현재 상태를 기준으로 작성하세요.
-        - 조사된 실제 채용 일정이 있으면 그 일정에 맞춰 역산하세요.
-        - 정확한 날짜가 확인되지 않으면 날짜를 만들지 말고
-          "공고 발표 후", "지원 마감 2주 전", "필기 4주 전" 같은 상대 기간을 사용하세요.
-        - 사용자가 이미 보유한 자격증을 다시 취득 과제로 넣지 마세요.
-        - 실제 부족점과 준비 우선순위를 중심으로 작성하세요.
-        - 과거 채용 일정만 확인된 경우 현재 일정처럼 단정하지 말고 basis에 명시하세요.
-        - career_plan은 create_career_plan=True일 때 의미 있게 작성하세요.
-        - todo_items는 create_todo_list=True일 때 의미 있게 작성하세요.
-        - Todo는 실행 가능한 한 문장으로 쓰고, 우선순위와 기한을 가능한 범위에서 설정하세요.
-        - 새로운 사실을 임의로 만들지 마세요.
+
+        1.
+        모든 실행 계획은 반드시 현재 날짜
+        {today.isoformat()} 이후를 기준으로 작성하세요.
+
+        2.
+        이미 지나간 날짜나 이미 종료된 채용 절차를
+        미래 실행 계획 항목에 넣지 마세요.
+
+        3.
+        현재 연도 {current_year}의 공식 채용공고가 존재하고
+        현재 날짜 이후 남은 지원, 필기, 면접 등의 일정이 있다면
+        남은 실제 공식 일정에 맞춰 계획하세요.
+
+        4.
+        현재 연도 {current_year}의 공식 채용이 이미 종료되었다면
+        종료된 일정을 다시 실행 계획으로 작성하지 마세요.
+        다음 연도 {next_year} 채용 준비 계획으로 전환하세요.
+
+        5.
+        다음 연도 {next_year}의 공식 일정이 아직 발표되지 않았다면
+        가장 최근 공식 채용공고의 일정 패턴을 참고하세요.
+
+        예:
+        - 최근 공식 공고가 3월 초 발표
+        - 3월 중순 지원 마감
+        - 4월 필기
+
+        현재 연도 채용이 이미 끝났다면:
+        - {next_year}년 1~2월 사전 준비
+        - {next_year}년 3월 전후 공고 예상
+        - {next_year}년 4월 전후 필기 예상
+
+        처럼 작성할 수 있습니다.
+        단, 확정 일정처럼 표현하지 마세요.
+
+        6.
+        현재 연도 공식 공고가 없고 과거 공식 공고만 존재하는 경우,
+        가장 최근 과거 공고의 월/일 패턴을 먼저
+        현재 연도 {current_year}에 대입해 판단하세요.
+
+        7.
+        현재 연도에 대입한 예상 시점이
+        현재 날짜 {today.isoformat()}보다 이미 과거라면
+        다음 연도 {next_year}로 이동하여 계획하세요.
+
+        8.
+        미래 일정이 공식 발표되지 않았다면 반드시
+        "예상", "전후", "과거 공식 일정 패턴 참고"
+        중 하나 이상의 표현을 사용하세요.
+
+        9.
+        과거 공고의 실제 날짜는
+        schedule_basis 또는 각 phase의 basis에 남기세요.
+
+        10.
+        plan_year는 실제 계획이 수행되는 연도로 설정하세요.
+
+        11.
+        schedule_status는 다음 기준으로 설정하세요.
+
+        - current_official:
+          현재 연도 공식 일정이 존재하며
+          현재 날짜 이후 일정이 남아 있음
+
+        - current_recruitment_closed:
+          현재 연도 공식 채용이 종료되었고
+          종료 사실 자체를 표시할 필요가 있음
+
+        - historical_projection:
+          과거 또는 가장 최근 공식 일정 패턴을 이용해
+          미래 일정을 예상함
+
+        - unknown:
+          판단 가능한 일정 근거가 부족함
+
+        12.
+        사용자가 이미 보유한 자격증을
+        다시 취득 과제로 넣지 마세요.
+
+        13.
+        실제 부족점과 준비 우선순위를 중심으로 작성하세요.
+
+        14.
+        정확한 미래 날짜를 근거 없이 만들지 마세요.
+
+        15.
+        career_plan은 create_career_plan=True일 때만
+        의미 있게 작성하세요.
+
+        16.
+        todo_items는 create_todo_list=True일 때만
+        의미 있게 작성하세요.
+
+        17.
+        Todo는 실행 가능한 한 문장으로 작성하고
+        가능한 경우 priority, due_date, reason을 설정하세요.
+
+        18.
+        새로운 사실을 임의로 만들지 마세요.
         """
     )
 
-    career_plan = state.get("career_plan", {})
-    if plan.create_career_plan and draft.career_plan is not None:
-        career_plan = draft.career_plan.model_dump()
+    career_plan = state.get(
+        "career_plan",
+        {},
+    )
+    todo_items = list(
+        state.get(
+            "todo_items",
+            [],
+        )
+    )
 
-    todo_items = list(state.get("todo_items", []))
+    career_plan_generated = False
+    todo_list_generated = False
+
+    if (
+        plan.create_career_plan
+        and draft.career_plan is not None
+    ):
+        career_plan = (
+            draft.career_plan.model_dump()
+        )
+        career_plan_generated = True
+
     if plan.create_todo_list:
-        # 같은 제목의 기존 항목이 있으면 완료 상태를 유지한다.
         existing_by_title = {
-            str(item.get("title", "")).strip().lower(): item
+            str(
+                item.get(
+                    "title",
+                    "",
+                )
+            ).strip().lower(): item
             for item in todo_items
             if item.get("title")
         }
 
         new_items = []
+
         for item in draft.todo_items:
-            key = item.title.strip().lower()
-            old = existing_by_title.get(key, {})
+            key = (
+                item.title
+                .strip()
+                .lower()
+            )
+            old = existing_by_title.get(
+                key,
+                {},
+            )
 
             new_items.append(
                 {
-                    "id": old.get("id") or uuid4().hex,
+                    "id": (
+                        old.get("id")
+                        or uuid4().hex
+                    ),
                     "title": item.title,
                     "category": item.category,
                     "priority": item.priority,
                     "due_date": item.due_date,
                     "reason": item.reason,
-                    "completed": bool(old.get("completed", False)),
+                    "completed": bool(
+                        old.get(
+                            "completed",
+                            False,
+                        )
+                    ),
                 }
             )
 
         todo_items = new_items
 
-    generated_parts = []
-    if plan.create_career_plan:
-        generated_parts.append("채용 일정 계획")
-    if plan.create_todo_list:
-        generated_parts.append("해야 할 일 체크리스트")
+        if new_items:
+            todo_list_generated = True
 
-    answer = state.get("final_answer", "").rstrip()
+    generated_parts = []
+
+    if career_plan_generated:
+        generated_parts.append(
+            "채용 일정 계획"
+        )
+
+    if todo_list_generated:
+        generated_parts.append(
+            "해야 할 일 체크리스트"
+        )
+
+    answer = state.get(
+        "final_answer",
+        "",
+    ).rstrip()
+
     if generated_parts:
         answer += (
             "\n\n"
-            + " · ".join(generated_parts)
+            + " · ".join(
+                generated_parts
+            )
             + "를 생성해 전용 탭에 반영했습니다."
         )
 
@@ -1255,6 +1651,10 @@ def execution_asset_builder_node(state: CareerState) -> dict:
         "career_plan": career_plan,
         "todo_items": todo_items,
         "final_answer": answer,
+
+        # 실제 생성 요청 처리가 끝났으므로 제안 대기 종료
+        "plan_offer_made": True,
+        "plan_offer_pending": False,
     }
 
 
@@ -1451,7 +1851,7 @@ career_graph = workflow.compile(
 
 app = FastAPI(
     title="Employment Strategy Agent",
-    version="2.1.0",
+    version="2.2.0",
 )
 
 
